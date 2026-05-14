@@ -175,6 +175,14 @@ export default function QuizPage() {
             >
               Começar o Quiz →
             </button>
+            <div className="mt-5">
+              <button
+                onClick={() => setScreen('ranking')}
+                className="text-sm font-medium text-[#1A6B50] hover:underline"
+              >
+                🏆 Ver ranking ao vivo
+              </button>
+            </div>
           </div>
         )}
 
