@@ -8,13 +8,15 @@ const LETTERS = ['A', 'B', 'C', 'D']
 const MEDALS = ['🥇', '🥈', '🥉']
 const TOTAL = questions.length
 
+function computeScore(answers: (number | null)[]) {
+  return answers.reduce<number>((sum, ans, i) => sum + (ans === questions[i].correct ? 1 : 0), 0)
+}
+
 export default function QuizPage() {
   const [screen, setScreen] = useState<Screen>('intro')
   const [playerName, setPlayerName] = useState('')
   const [currentQ, setCurrentQ] = useState(0)
-  const [score, setScore] = useState(0)
-  const [answered, setAnswered] = useState(false)
-  const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
+  const [answers, setAnswers] = useState<(number | null)[]>(Array(TOTAL).fill(null))
   const [ranking, setRanking] = useState<RankingEntry[]>([])
   const [rankingLoading, setRankingLoading] = useState(false)
   const [rankingError, setRankingError] = useState('')
@@ -22,6 +24,8 @@ export default function QuizPage() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const question = questions[currentQ]
+  const selectedIdx = answers[currentQ]
+  const finalScore = computeScore(answers)
 
   const fetchRanking = useCallback(async () => {
     setRankingLoading(true)
@@ -51,30 +55,24 @@ export default function QuizPage() {
   function startQuiz() {
     if (playerName.trim().length < 2) return
     setCurrentQ(0)
-    setScore(0)
-    setAnswered(false)
-    setSelectedIdx(null)
+    setAnswers(Array(TOTAL).fill(null))
     setScreen('question')
   }
 
   function pickAnswer(idx: number) {
-    if (answered) return
-    setAnswered(true)
-    setSelectedIdx(idx)
-    if (idx === question.correct) {
-      setScore(prev => prev + 1)
-    }
+    setAnswers(prev => {
+      const copy = [...prev]
+      copy[currentQ] = idx
+      return copy
+    })
   }
 
   async function nextQuestion() {
     if (currentQ + 1 < TOTAL) {
       setCurrentQ(prev => prev + 1)
-      setAnswered(false)
-      setSelectedIdx(null)
     } else {
       setSaving(true)
       try {
-        const finalScore = selectedIdx === question.correct ? score + 1 : score
         await fetch('/api/scores', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -87,37 +85,26 @@ export default function QuizPage() {
   }
 
   function getResultMessage() {
-    const finalScore = answered && selectedIdx === question.correct ? score + 1 : score
     if (finalScore === TOTAL) return { title: 'Perfeito! Expert financeiro 🏆', text: 'Você acertou tudo! Domínio completo sobre planejamento financeiro e sucessório.' }
     if (finalScore >= 5) return { title: 'Muito bem!', text: `${finalScore} de ${TOTAL} acertos. Ótimo conhecimento — ainda há espaço para aprofundar com seu assessor.` }
     if (finalScore >= 3) return { title: 'Bom começo!', text: `${finalScore} de ${TOTAL} acertos. O planejamento tem muito a oferecer — a EQI pode te ajudar nessa jornada.` }
     return { title: 'Hora de planejar!', text: `${finalScore} de ${TOTAL} acertos. É exatamente por isso que estamos aqui. Vamos conversar sobre seu planejamento!` }
   }
 
-  function getFinalScore() {
-    return answered && selectedIdx === question.correct ? score + 1 : score
-  }
-
   function restartQuiz() {
     setScreen('intro')
     setCurrentQ(0)
-    setScore(0)
-    setAnswered(false)
-    setSelectedIdx(null)
+    setAnswers(Array(TOTAL).fill(null))
   }
 
   function getOptionClass(idx: number) {
-    if (!answered) return 'bg-white border border-gray-200 hover:border-[#2DC88A] hover:bg-green-50 cursor-pointer transition-all duration-150 hover:translate-x-1'
-    if (idx === question.correct) return 'bg-[#E8FAF3] border border-[#1A6B50] cursor-default'
-    if (idx === selectedIdx && idx !== question.correct) return 'bg-red-50 border border-red-300 cursor-default'
-    return 'bg-white border border-gray-200 opacity-50 cursor-default'
+    if (idx === selectedIdx) return 'bg-[#0A3D2E] border border-[#0A3D2E] cursor-pointer'
+    return 'bg-white border border-gray-200 hover:border-[#2DC88A] hover:bg-green-50 cursor-pointer transition-all duration-150 hover:translate-x-1'
   }
 
   function getLetterClass(idx: number) {
-    if (!answered) return 'bg-gray-100 text-gray-500'
-    if (idx === question.correct) return 'bg-[#1A6B50] text-white'
-    if (idx === selectedIdx && idx !== question.correct) return 'bg-red-400 text-white'
-    return 'bg-gray-100 text-gray-400'
+    if (idx === selectedIdx) return 'bg-white text-[#0A3D2E]'
+    return 'bg-gray-100 text-gray-500'
   }
 
   const progressPct = (currentQ / TOTAL) * 100
@@ -159,7 +146,7 @@ export default function QuizPage() {
               <span className="italic text-[#1A6B50]">planejamento financeiro?</span>
             </h1>
             <p className="text-gray-500 text-sm leading-relaxed max-w-sm mx-auto mb-8">
-              Responda 7 perguntas baseadas na apresentação de hoje e dispute o ranking ao vivo com os outros participantes.
+              Responda 7 perguntas baseadas na apresentação de hoje. As respostas certas e os comentários aparecem no final — então dispute o ranking ao vivo!
             </p>
             <div className="flex gap-3 justify-center mb-8 flex-wrap">
               {[['7', 'perguntas'], ['Ranking', 'ao vivo'], ['~5', 'minutos']].map(([val, label]) => (
@@ -210,66 +197,102 @@ export default function QuizPage() {
                 <button
                   key={idx}
                   onClick={() => pickAnswer(idx)}
-                  disabled={answered}
                   className={`w-full rounded-xl px-4 py-3.5 text-left text-sm flex items-center gap-3 ${getOptionClass(idx)}`}
                 >
                   <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-all ${getLetterClass(idx)}`}>
                     {LETTERS[idx]}
                   </span>
-                  <span className="text-[#0A3D2E]">{opt}</span>
+                  <span className={idx === selectedIdx ? 'text-white' : 'text-[#0A3D2E]'}>{opt}</span>
                 </button>
               ))}
             </div>
 
-            {answered && (
-              <div className={`p-4 rounded-xl text-sm leading-relaxed mb-4 border-l-4 ${selectedIdx === question.correct ? 'bg-[#E8FAF3] border-[#1A6B50] text-[#0A3D2E]' : 'bg-red-50 border-red-400 text-red-800'}`}>
-                <strong className="block mb-1 font-semibold">
-                  {selectedIdx === question.correct ? '✓ Correto!' : '✗ Não foi dessa vez.'}
-                </strong>
-                {question.feedback}
-              </div>
-            )}
-
             <div className="flex items-center justify-between pt-4 border-t border-gray-200">
               <span className="text-sm text-gray-400">
-                Pontos: <strong className="text-[#0A3D2E] font-semibold">{score}</strong>
+                Pergunta <strong className="text-[#0A3D2E] font-semibold">{currentQ + 1}</strong> de {TOTAL}
               </span>
-              {answered && (
-                <button
-                  onClick={nextQuestion}
-                  disabled={saving}
-                  className="bg-[#0A3D2E] text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-[#1A6B50] transition-colors disabled:opacity-60"
-                >
-                  {saving ? 'Salvando…' : currentQ + 1 < TOTAL ? 'Próxima →' : 'Ver resultado →'}
-                </button>
-              )}
+              <button
+                onClick={nextQuestion}
+                disabled={selectedIdx === null || saving}
+                className="bg-[#0A3D2E] text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-[#1A6B50] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Salvando…' : currentQ + 1 < TOTAL ? 'Próxima →' : 'Ver resultado →'}
+              </button>
             </div>
           </div>
         )}
 
         {/* ── RESULT ── */}
         {screen === 'result' && (
-          <div className="bg-[#F5F2EC] rounded-2xl p-8 md:p-12 text-center">
-            <div className="w-24 h-24 rounded-full bg-[#0A3D2E] flex flex-col items-center justify-center mx-auto mb-6">
-              <span className="text-white font-semibold text-3xl leading-none">{getFinalScore()}</span>
-              <span className="text-[#2DC88A] text-xs mt-0.5">de {TOTAL}</span>
+          <div className="bg-[#F5F2EC] rounded-2xl p-8 md:p-12">
+            <div className="text-center">
+              <div className="w-24 h-24 rounded-full bg-[#0A3D2E] flex flex-col items-center justify-center mx-auto mb-6">
+                <span className="text-white font-semibold text-3xl leading-none">{finalScore}</span>
+                <span className="text-[#2DC88A] text-xs mt-0.5">de {TOTAL}</span>
+              </div>
+              <h2 className="text-2xl font-semibold text-[#0A3D2E] mb-2">{getResultMessage().title}</h2>
+              <p className="text-gray-500 text-sm leading-relaxed max-w-sm mx-auto mb-8">
+                {getResultMessage().text}
+              </p>
+              <div className="grid grid-cols-3 gap-3 mb-8">
+                {[
+                  { label: 'perguntas', val: TOTAL, color: 'text-[#0A3D2E]' },
+                  { label: 'corretas', val: finalScore, color: 'text-[#1A6B50]' },
+                  { label: 'erradas', val: TOTAL - finalScore, color: 'text-red-500' }
+                ].map(({ label, val, color }) => (
+                  <div key={label} className="bg-white rounded-xl p-4">
+                    <div className={`text-2xl font-semibold ${color}`}>{val}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{label}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <h2 className="text-2xl font-semibold text-[#0A3D2E] mb-2">{getResultMessage().title}</h2>
-            <p className="text-gray-500 text-sm leading-relaxed max-w-sm mx-auto mb-8">
-              {getResultMessage().text}
-            </p>
-            <div className="grid grid-cols-3 gap-3 mb-8">
-              {[
-                { label: 'perguntas', val: TOTAL, color: 'text-[#0A3D2E]' },
-                { label: 'corretas', val: getFinalScore(), color: 'text-[#1A6B50]' },
-                { label: 'erradas', val: TOTAL - getFinalScore(), color: 'text-red-500' }
-              ].map(({ label, val, color }) => (
-                <div key={label} className="bg-white rounded-xl p-4">
-                  <div className={`text-2xl font-semibold ${color}`}>{val}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{label}</div>
-                </div>
-              ))}
+
+            {/* REVISÃO DAS RESPOSTAS */}
+            <h3 className="text-sm font-semibold text-[#0A3D2E] uppercase tracking-wider mb-4">
+              Revisão das respostas
+            </h3>
+            <div className="space-y-4 mb-8">
+              {questions.map((q, i) => {
+                const userIdx = answers[i]
+                const isCorrect = userIdx === q.correct
+                return (
+                  <div
+                    key={i}
+                    className={`bg-white rounded-xl p-4 border-l-4 ${isCorrect ? 'border-[#1A6B50]' : 'border-red-400'}`}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="bg-[#0A3D2E] text-[#2DC88A] text-[10px] font-semibold px-2 py-0.5 rounded">
+                        Q {i + 1}
+                      </span>
+                      <span className="text-gray-400 text-[10px] uppercase tracking-wider">{q.category}</span>
+                      <span className={`ml-auto text-xs font-semibold ${isCorrect ? 'text-[#1A6B50]' : 'text-red-500'}`}>
+                        {isCorrect ? '✓ Correto' : '✗ Errou'}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-[#0A3D2E] leading-snug mb-3">{q.text}</p>
+
+                    <div className="space-y-1.5 mb-3">
+                      <div className={`flex items-start gap-2 text-xs rounded-lg px-3 py-2 ${isCorrect ? 'bg-[#E8FAF3] text-[#0A3D2E]' : 'bg-red-50 text-red-800'}`}>
+                        <span className="font-semibold flex-shrink-0">Sua resposta:</span>
+                        <span>
+                          {userIdx !== null ? `${LETTERS[userIdx]}. ${q.options[userIdx]}` : 'Não respondida'}
+                        </span>
+                      </div>
+                      {!isCorrect && (
+                        <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2 bg-[#E8FAF3] text-[#0A3D2E]">
+                          <span className="font-semibold flex-shrink-0">Resposta certa:</span>
+                          <span>{`${LETTERS[q.correct]}. ${q.options[q.correct]}`}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-gray-500 leading-relaxed">{q.feedback}</p>
+                  </div>
+                )
+              })}
             </div>
+
             <div className="flex gap-3 justify-center flex-wrap">
               <button
                 onClick={() => setScreen('ranking')}
